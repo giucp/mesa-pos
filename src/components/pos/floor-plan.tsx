@@ -46,7 +46,7 @@ type FloorTable = {
       createdAt?: string | null;
       sentAt?: string | null;
     }[];
-    payments: { amountUsd: number; createdAt?: string | null }[];
+    payments: { amountUsd: number; confirmed: boolean; createdAt?: string | null }[];
   }[];
 };
 

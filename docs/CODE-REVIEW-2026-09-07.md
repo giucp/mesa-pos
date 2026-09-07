@@ -17,6 +17,18 @@ la totalidad del POS ni sustituye pruebas de producción o de concurrencia Postg
   correo podía heredar una sesión antigua. Ahora se busca exclusivamente el ID activo.
 - La página de entrada verificaba solo la cookie: usuarios desactivados podían
   rebotar entre entrada y pantalla protegida. Ahora consulta el usuario vigente.
+- Los pagos pendientes se incluían en el total aplicado y podían cerrar la cuenta
+  antes de verificarse. Todos los saldos usan ahora únicamente pagos confirmados;
+  al confirmar un pago se vuelve a calcular el estado y se genera el comprobante.
+- La recuperación de cobros interrumpidos buscaba el ID dentro de una nota libre.
+  Ahora `Payment.clientOpId` tiene una restricción única por cuenta y conserva una
+  lectura compatible, con coincidencia exacta, para registros anteriores.
+- Confirmar dos veces podía separar la actualización de la bitácora. La confirmación
+  y su evento de auditoría se escriben en una sola transacción condicional.
+- El servidor aceptaba una moneda diferente a la configurada para el método de pago.
+  Ahora rechaza montos no finitos y combinaciones método/moneda incoherentes.
+- El build continuaba si fallaba `prisma migrate deploy`, publicando potencialmente
+  código incompatible con la base. Ahora una migración fallida detiene el deploy.
 
 ## Antes de integrar/desplegar
 
@@ -41,20 +53,15 @@ No se modificaron credenciales reales, datos, despliegues ni políticas Supabase
   Se usó este comando porque el CLI tsx no puede crear su socket IPC aquí.
 - `npx next typegen` y `npx tsc --noEmit`: OK.
 - `npx next build --webpack`: OK, sin ejecutar migraciones ni seed.
-- Lint de archivos modificados: OK.
-- Lint global: 8 errores y 2 advertencias en archivos ajenos a esta corrección.
-  Incluyen funciones impuras/memoización en checkout-desk y efectos de estado en
-  clock, menu-create-dialogs, order-entry y theme-toggle.
+- Lint global: OK. Se eliminaron la inicialización impura del ID de cobro, cuatro
+  memorizaciones/efectos de estado incompatibles con React Compiler y una advertencia.
 
 ## Siguiente revisión prioritaria
 
 - PIN personales y limitación persistente de intentos de login. No existe todavía
   protección distribuida contra intentos repetidos; no confundir esto con roles.
-- El build personalizado ejecuta migraciones/seed y permite continuar si fallan.
-  Separar despliegue de aplicación de migraciones aprobadas y fallar de forma clara.
 - Revisar atomicidad y concurrencia de cobros, cierres, reservas y auditoría en Postgres.
   Las pruebas SQLite no demuestran el comportamiento entre instancias Vercel.
 - Verificar permisos reales Supabase: el informe existente declara GRANT revocados,
   pero esta revisión no tuvo acceso a la base para comprobarlo.
-- Resolver lint y después dividir `src/lib/ops.ts` por dominio con pruebas de regresión.
-  Evitar una reescritura completa simultánea con cambios financieros.
+- Dividir `src/lib/ops.ts` por dominio con pruebas de regresión, en cambios pequeños.

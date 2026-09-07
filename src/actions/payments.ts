@@ -2,23 +2,66 @@
 
 import { prisma } from "@/lib/db";
 import { allowAction } from "@/lib/auth-guard";
-import { confirmPaymentOp, findOpenShift, lookupPaymentOp, reopenCheckOp } from "@/lib/ops";
+import {
+  confirmPaymentOp,
+  findOpenShift,
+  findPaymentByOpId,
+  lookupPaymentOp,
+  reopenCheckOp,
+} from "@/lib/ops";
 import { requireMotivo } from "@/lib/permissions";
 import { getBcvRate } from "@/lib/bcv";
-import { usdToVesCents, vesToUsdCents } from "@/lib/money";
+import { usdToVesCents } from "@/lib/money";
 import {
-  documentKind,
   fiscalTotals,
   igtfOn,
-  resolveFiscalDocStatus,
   resolveIgtfRate,
 } from "@/lib/fiscal";
-import { getRestaurant, nextControlAndInvoice } from "@/lib/queries";
+import { getRestaurant } from "@/lib/queries";
 import { writeAudit, auditDetails } from "@/lib/audit";
 import { revalidatePos } from "@/lib/revalidate";
 import { normalizeRateSource } from "@/lib/bcv-label";
 import { DIGITAL_TENDERS } from "@/lib/pagos";
 import { paymentIsConfirmed, settleNote, settleTender } from "@/lib/caja";
+import { normalizePaymentOpId } from "@/lib/payment-status";
+import { reconcileCheckPayments } from "@/lib/payment-reconciliation";
+
+async function replayPayment(checkId: string, payment: {
+  id: string;
+  igtfUsd: number;
+  igtfRate: number;
+}) {
+  const current = await prisma.check.findUnique({
+    where: { id: checkId },
+    include: { lines: true, payments: true },
+  });
+  if (!current) return { error: "Cuenta no encontrada." };
+  const restaurant = await getRestaurant();
+  const frozen = current.bcvRateUsed || (await getBcvRate()).usdToVes;
+  const totals = fiscalTotals(
+    current.lines,
+    current.tipUsd,
+    restaurant.ivaRate,
+    frozen,
+    restaurant.tipInTaxableBase,
+  );
+  const paid = current.payments.reduce(
+    (sum, row) => sum + (row.confirmed ? row.amountUsd : 0),
+    0,
+  );
+  const remaining = Math.max(0, totals.totalUsd - paid);
+  return {
+    ok: true as const,
+    paymentId: payment.id,
+    remainingUsd: remaining,
+    igtfUsd: payment.igtfUsd,
+    igtfRate: payment.igtfRate,
+    changeUsd: Math.max(0, paid - totals.totalUsd),
+    changeVes: usdToVesCents(Math.max(0, paid - totals.totalUsd), frozen),
+    closed: remaining <= 2,
+    duplicate: true as const,
+  };
+}
 
 export async function setTipAction(checkId: string, tipUsd: number) {
   const auth = await allowAction("checkout");
@@ -78,41 +121,12 @@ export async function addPaymentAction(input: {
   const auth = await allowAction("checkout");
   if (!auth.ok) return { error: auth.error };
   const user = auth.user;
-  if (input.idempotencyKey) {
-    const replay = await prisma.payment.findFirst({
-      where: { checkId: input.checkId, note: { contains: `k=${input.idempotencyKey}` } },
-    });
-    if (replay) {
-      const current = await prisma.check.findUnique({
-        where: { id: input.checkId },
-        include: { lines: true, payments: true },
-      });
-      if (current) {
-        const restaurantNow = await getRestaurant();
-        const frozen = current.bcvRateUsed || (await getBcvRate()).usdToVes;
-        const totalsNow = fiscalTotals(
-          current.lines,
-          current.tipUsd,
-          restaurantNow.ivaRate,
-          frozen,
-          restaurantNow.tipInTaxableBase,
-        );
-        const paidNow = current.payments.reduce((s, p) => s + p.amountUsd, 0);
-        const remainingNow = Math.max(0, totalsNow.totalUsd - paidNow);
-        return {
-          ok: true,
-          paymentId: replay.id,
-          remainingUsd: remainingNow,
-          igtfUsd: replay.igtfUsd,
-          igtfRate: replay.igtfRate,
-          changeUsd: Math.max(0, paidNow - totalsNow.totalUsd),
-          changeVes: usdToVesCents(Math.max(0, paidNow - totalsNow.totalUsd), frozen),
-          closed: remainingNow <= 2,
-          duplicate: true,
-        };
-      }
-    }
+  const idempotencyKey = normalizePaymentOpId(input.idempotencyKey);
+  if (!idempotencyKey) {
+    return { error: "El cobro no tiene un identificador de operación válido. Recarga e intenta de nuevo." };
   }
+  const replay = await findPaymentByOpId(prisma, input.checkId, idempotencyKey);
+  if (replay) return replayPayment(input.checkId, replay);
 
   const [check, method, restaurant, rate] = await Promise.all([
     prisma.check.findUnique({
@@ -129,7 +143,12 @@ export async function addPaymentAction(input: {
   if (!["OPEN", "SENT", "PARTIAL"].includes(check.status)) {
     return { error: "Esta cuenta no se puede cobrar." };
   }
-  if (input.amountCents <= 0) return { error: "El monto debe ser mayor a cero." };
+  if (!Number.isFinite(input.amountCents) || input.amountCents <= 0) {
+    return { error: "El monto debe ser mayor a cero." };
+  }
+  if ((input.currency !== "USD" && input.currency !== "VES") || input.currency !== method.currency) {
+    return { error: "La moneda no corresponde al método de pago." };
+  }
 
   const needsRef = (DIGITAL_TENDERS as readonly string[]).includes(method.key);
   if (needsRef && !input.reference?.trim()) {
@@ -146,7 +165,7 @@ export async function addPaymentAction(input: {
     frozenRate,
     restaurant.tipInTaxableBase,
   );
-  const paidBefore = check.payments.reduce((s, p) => s + p.amountUsd, 0);
+  const paidBefore = check.payments.reduce((s, p) => s + (p.confirmed ? p.amountUsd : 0), 0);
   const remainingUsd = Math.max(0, totalsBefore.totalUsd - paidBefore);
   if (remainingUsd <= 2) {
     return { error: "Esta cuenta ya está cubierta. No se registró otro pago." };
@@ -208,15 +227,18 @@ export async function addPaymentAction(input: {
         igtfVes: usdToVesCents(igtfUsd, frozenRate),
         reference: input.reference?.trim() || null,
         confirmed,
+        clientOpId: idempotencyKey,
         note: settleNote({
           tenderedCents: settle.tenderedCents,
           changeCents: settle.changeCents,
-          idempotencyKey: input.idempotencyKey,
+          idempotencyKey,
           extra: needsRef ? "Registro manual / confirmación" : settle.changeCents ? "Vuelto descontado del efectivo" : null,
         }),
       },
     });
   } catch (e) {
+    const existing = await findPaymentByOpId(prisma, input.checkId, idempotencyKey);
+    if (existing) return replayPayment(input.checkId, existing);
     return { error: e instanceof Error ? e.message : "No se pudo registrar el pago." };
   }
   if (confirmed && (DIGITAL_TENDERS as readonly string[]).includes(method.key)) {
@@ -253,113 +275,14 @@ export async function addPaymentAction(input: {
     },
   });
 
-  const refreshed = await prisma.check.findUnique({
-    where: { id: check.id },
-    include: { lines: true, payments: true, fiscal: true },
-  });
-  if (!refreshed) return { error: "Error al recalcular." };
-
-  const totals = fiscalTotals(
-    refreshed.lines,
-    refreshed.tipUsd,
-    restaurant.ivaRate,
-    frozenRate,
-    restaurant.tipInTaxableBase,
-  );
-  const paidUsd = refreshed.payments.reduce((s, p) => s + p.amountUsd, 0);
-  const igtfPaid = refreshed.payments.reduce((s, p) => s + p.igtfUsd, 0);
-  const remaining = totals.totalUsd - paidUsd;
-
-  if (remaining <= 2) {
-    await prisma.check.update({
-      where: { id: check.id },
-      data: { status: "PAID", closedAt: new Date() },
-    });
-    if (check.tableId) {
-      const otherOpen = await prisma.check.count({
-        where: {
-          tableId: check.tableId,
-          id: { not: check.id },
-          status: { in: ["OPEN", "SENT", "PARTIAL"] },
-        },
-      });
-      if (!otherOpen) {
-        await prisma.diningTable.update({
-          where: { id: check.tableId },
-          data: { status: "FREE" },
-        });
-      }
-    }
-    if (!refreshed.fiscal) {
-      const docStatus = resolveFiscalDocStatus({
-        adapterMf: restaurant.fiscalAdapterMf,
-        adapterDigital: restaurant.fiscalAdapterDigital,
-      });
-      const nums = await nextControlAndInvoice();
-      const blendedIgtf =
-        paidUsd > 0 ? Math.round((igtfPaid / paidUsd) * 10000) / 100 : igtfRate;
-      const buyerRif = input.customerRif?.trim() || check.buyerRif || "V-00000000-0";
-      const kind = documentKind(buyerRif);
-      await prisma.fiscalDraft.create({
-        data: {
-          checkId: check.id,
-          documentType: kind.documentType,
-          ticketType: kind.ticketType,
-          emitterRif: restaurant.rif,
-          controlNumber: "",
-          invoiceNumber: nums.invoiceNumber,
-          customerName: input.customerName?.trim() || check.buyerName || "Consumidor final",
-          customerRif: buyerRif,
-          customerCi: input.customerCi?.trim() || check.buyerCi || null,
-          channel: check.channel,
-          ivaRate: restaurant.ivaRate,
-          ivaBreakdown: JSON.stringify(totals.breakdown),
-          subtotalUsd: totals.subtotalUsd,
-          ivaUsd: totals.ivaUsd,
-          tipUsd: totals.tipUsd,
-          igtfUsd: igtfPaid,
-          igtfRate: blendedIgtf,
-          totalUsd: totals.totalUsd + igtfPaid,
-          subtotalVes: totals.subtotalVes,
-          ivaVes: totals.ivaVes,
-          tipVes: totals.tipVes,
-          igtfVes: usdToVesCents(igtfPaid, frozenRate),
-          totalVes: totals.totalVes + usdToVesCents(igtfPaid, frozenRate),
-          usdRef: `USD ${ (totals.totalUsd / 100).toFixed(2) }`,
-          bcvRate: frozenRate,
-          bcvSource: frozenSource,
-          homologation: docStatus,
-          adapterMf: restaurant.fiscalAdapterMf,
-          adapterDigital: restaurant.fiscalAdapterDigital,
-          withholdingNote: "Retenciones IVA no disponibles en esta fase",
-        },
-      });
-      await writeAudit({
-        action: "FISCAL_DOCUMENT",
-        reason:
-          docStatus === "internal"
-            ? "Cierre de cuenta — comprobante interno (no es documento fiscal SENIAT)"
-            : "Cierre de cuenta — documento por medio autorizado",
-        userId: user.id,
-        checkId: check.id,
-        details: JSON.stringify({
-          control: "",
-          invoice: nums.invoiceNumber,
-          channel: check.channel,
-        }),
-      });
-    }
-  } else {
-    await prisma.check.update({
-      where: { id: check.id },
-      data: { status: "PARTIAL" },
-    });
-  }
+  const reconciled = await reconcileCheckPayments(check.id, user);
+  if (!reconciled.ok) return { error: reconciled.error };
+  const remaining = reconciled.remaining;
 
   revalidatePos();
 
   return {
-    ok: true,
+    ok: true as const,
     paymentId: payment.id,
     remainingUsd: Math.max(0, remaining),
     igtfUsd,
@@ -449,10 +372,14 @@ export async function verifyPaymentStatusAction(checkId: string, opId: string) {
 export async function confirmPaymentAction(paymentId: string) {
   const auth = await allowAction("checkout");
   if (!auth.ok) return { error: auth.error };
+  const payment = await prisma.payment.findUnique({ where: { id: paymentId }, select: { checkId: true } });
+  if (!payment) return { error: "Pago no encontrado." };
   const res = await confirmPaymentOp(prisma, auth.user, paymentId);
   if (!res.ok) return { error: res.error };
+  const reconciled = await reconcileCheckPayments(payment.checkId, auth.user);
+  if (!reconciled.ok) return { error: reconciled.error };
   revalidatePos();
-  return { ok: true };
+  return { ok: true, closed: reconciled.closed, remainingUsd: Math.max(0, reconciled.remaining) };
 }
 
 export async function reopenCheckAction(checkId: string, reason: string) {

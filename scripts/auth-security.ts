@@ -43,14 +43,14 @@ async function main() {
     findFirst: async ({ where }: { where: { id: string; active: boolean } }) =>
       where.id === storedId && active ? { ...user, id: storedId, active } : null,
   } };
-  mock.module("../src/lib/db", { namedExports: { prisma: db, isDatabaseConfigured: () => true,
+  mock.module("../src/lib/db", { exports: { prisma: db, isDatabaseConfigured: () => true,
     MISSING_DB_MESSAGE: "missing", asPublicDbError: () => null } });
-  mock.module("../src/lib/session", { namedExports: {
+  mock.module("../src/lib/session", { exports: {
     setSession: async () => { cookieWrites++; }, clearSession: async () => {},
     getSession: async () => user,
   } });
-  mock.module("next/navigation", { namedExports: { redirect: (path: string) => { throw new Error(`REDIRECT:${path}`); } } });
-  mock.module("next/headers", { namedExports: { headers: async () => new Headers() } });
+  mock.module("next/navigation", { exports: { redirect: (path: string) => { throw new Error(`REDIRECT:${path}`); } } });
+  mock.module("next/headers", { exports: { headers: async () => new Headers() } });
   const { demoLoginAction, pinLoginAction, loginAction } = await import("../src/actions/auth");
   const { liveUser } = await import("../src/lib/auth-guard");
   delete process.env.MESA_ISOLATED_DEMO;

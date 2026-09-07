@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db";
 import { itemOnChannel, type Channel } from "@/lib/fiscal";
 import { checkTotals } from "@/lib/money";
 import { isBarraZone, OPEN_CHECK_STATUSES } from "@/lib/open-checks";
+import { confirmedPaymentUsd } from "@/lib/payment-status";
 export { startOfBusinessDay } from "@/lib/open-checks";
 
 export function fohMenuItems<T extends { available: boolean; channels: string }>(
@@ -91,12 +92,12 @@ export function summarizeCheck(
   check: {
     tipUsd: number;
     lines: { qty: number; priceUsd: number; modifiers: string; status: string }[];
-    payments: { amountUsd: number }[];
+    payments: { amountUsd: number; confirmed: boolean }[];
   },
   ivaRate: number,
 ) {
   const totals = checkTotals(check.lines, check.tipUsd, ivaRate);
-  const paidUsd = check.payments.reduce((s, p) => s + p.amountUsd, 0);
+  const paidUsd = confirmedPaymentUsd(check.payments);
   const remainingUsd = Math.max(0, totals.totalUsd - paidUsd);
   return { ...totals, paidUsd, remainingUsd };
 }
@@ -134,4 +135,3 @@ export async function getOpenChecks() {
     orderBy: { updatedAt: "desc" },
   });
 }
-

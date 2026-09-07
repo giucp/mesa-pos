@@ -9,6 +9,7 @@ import { fiscalTotals, TAX_CODE_LABEL } from "@/lib/fiscal";
 import { formatUsd, lineNetUsd } from "@/lib/money";
 import { paths } from "@/lib/paths";
 import { checkPlaceLabel } from "@/lib/open-checks";
+import { confirmedPaymentUsd } from "@/lib/payment-status";
 
 type Line = {
   id: string;
@@ -37,14 +38,14 @@ export function CheckView({
     channel: string;
     table: { id: string; number: string } | null;
     lines: Line[];
-    payments: { id: string; methodLabel: string; amountUsd: number; currency: string; amountCents: number }[];
+    payments: { id: string; methodLabel: string; amountUsd: number; currency: string; amountCents: number; confirmed: boolean }[];
   };
   restaurant: { ivaRate: number; tipInTaxableBase: boolean };
   rate: number;
   canPay: boolean;
 }) {
   const totals = fiscalTotals(check.lines, check.tipUsd, restaurant.ivaRate, rate, restaurant.tipInTaxableBase);
-  const paid = check.payments.reduce((s, p) => s + p.amountUsd, 0);
+  const paid = confirmedPaymentUsd(check.payments);
   const remaining = Math.max(0, totals.totalUsd - paid);
 
   return (

@@ -175,15 +175,11 @@ if (hasLivePostgres) {
     console.log("[mesa] migrate host (unparsed)");
   }
   console.log("[mesa] prisma migrate deploy");
-  const migrated = run("npx", ["prisma", "migrate", "deploy", "--schema", db.schemaPath], true, 45_000);
-  if (migrated !== 0) {
-    console.warn("[mesa] migrate deploy falló. El build sigue para no tumbar el login. Revisa DIRECT_URL (Supabase :5432) y vuelve a desplegar.");
-  } else {
-    console.log("[mesa] seed (idempotente)");
-    const seeded = run("npx", ["tsx", "prisma/seed.ts"], true, 45_000);
-    if (seeded !== 0) {
-      console.warn("[mesa] seed falló. El build sigue. Corre npm run db:seed cuando la URI esté bien.");
-    }
+  run("npx", ["prisma", "migrate", "deploy", "--schema", db.schemaPath], false, 45_000);
+  console.log("[mesa] seed (idempotente)");
+  const seeded = run("npx", ["tsx", "prisma/seed.ts"], true, 45_000);
+  if (seeded !== 0) {
+    console.warn("[mesa] seed falló. La aplicación compiló con el esquema correcto; revisa la semilla por separado.");
   }
 } else {
   console.log("[mesa] Sin URI Postgres de Supabase: se omite migrate/seed. Pega DATABASE_URL y DIRECT_URL en Vercel y haz Redeploy.");

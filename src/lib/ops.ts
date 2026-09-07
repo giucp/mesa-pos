@@ -5,7 +5,8 @@ import { TAX_CODE_RATE, asTaxCode } from "@/lib/fiscal";
 import { lineTotalUsd } from "@/lib/money";
 import type { SessionUser } from "@/lib/roles";
 import { hasOrderConflict, type ServerCheckSnapshot } from "@/lib/sync-state";
-import { classifyPaymentRow } from "@/lib/payment-status";
+import { classifyPaymentRow, normalizePaymentOpId } from "@/lib/payment-status";
+import { parseSettleNote } from "@/lib/caja";
 import {
   DRAWER_KEY,
   SHIFT_KIND_LABEL,
@@ -515,33 +516,43 @@ export async function confirmPaymentOp(
 ) {
   const auth = authorize(user, "checkout");
   if (!auth.ok) return auth;
-  const payment = await db.payment.findUnique({
-    where: { id: paymentId },
-    include: { check: { select: { folio: true } } },
+  return db.$transaction(async (tx) => {
+    const payment = await tx.payment.findUnique({
+      where: { id: paymentId },
+      include: { check: { select: { folio: true } } },
+    });
+    if (!payment) return { ok: false as const, error: "Pago no encontrado." };
+    if (payment.confirmed) return { ok: false as const, error: "Ese pago ya está verificado." };
+    const open = await tx.cashShift.findFirst({
+      where: { drawerKey: DRAWER_KEY, status: "OPEN" },
+      orderBy: { openedAt: "desc" },
+    });
+    const nextShiftId =
+      !payment.shiftId || (open && payment.shiftId !== open.id) ? open?.id ?? payment.shiftId : payment.shiftId;
+    const changed = await tx.payment.updateMany({
+      where: { id: paymentId, confirmed: false },
+      data: { confirmed: true, ...(nextShiftId ? { shiftId: nextShiftId } : {}) },
+    });
+    if (changed.count !== 1) {
+      return { ok: false as const, error: "Ese pago ya está verificado." };
+    }
+    await tx.auditLog.create({
+      data: {
+        action: "PAYMENT_CONFIRM",
+        reason: reason.trim(),
+        userId: auth.user.id,
+        checkId: payment.checkId,
+        details: auditDetails({
+          entity: "payment",
+          entityId: payment.id,
+          folio: payment.check.folio,
+          from: { confirmed: false, method: payment.methodKey, reference: payment.reference },
+          to: { confirmed: true },
+        }),
+      },
+    });
+    return { ok: true as const };
   });
-  if (!payment) return { ok: false as const, error: "Pago no encontrado." };
-  if (payment.confirmed) return { ok: false as const, error: "Ese pago ya está verificado." };
-  const open = await findOpenShift(db);
-  const nextShiftId =
-    !payment.shiftId || (open && payment.shiftId !== open.id) ? open?.id ?? payment.shiftId : payment.shiftId;
-  await db.payment.update({
-    where: { id: paymentId },
-    data: { confirmed: true, ...(nextShiftId ? { shiftId: nextShiftId } : {}) },
-  });
-  await appendAudit(db, {
-    action: "PAYMENT_CONFIRM",
-    reason,
-    userId: auth.user.id,
-    checkId: payment.checkId,
-    details: auditDetails({
-      entity: "payment",
-      entityId: payment.id,
-      folio: payment.check.folio,
-      from: { confirmed: false, method: payment.methodKey, reference: payment.reference },
-      to: { confirmed: true },
-    }),
-  });
-  return { ok: true as const };
 }
 
 export async function findOpenShift(db: Db, drawerKey = DRAWER_KEY) {
@@ -838,12 +849,20 @@ export async function rewriteClosedShiftOp(
 }
 
 export async function findPaymentByOpId(db: Db, checkId: string, opId: string) {
-  const trimmed = opId.trim();
-  if (!trimmed) return null;
-  return db.payment.findFirst({
-    where: { checkId, note: { contains: `k=${trimmed}` } },
+  const normalized = normalizePaymentOpId(opId);
+  if (!normalized) return null;
+  const exact = await db.payment.findUnique({
+    where: { checkId_clientOpId: { checkId, clientOpId: normalized } },
+  });
+  if (exact) return exact;
+
+  // Compatibility for rows created before Payment.clientOpId existed. Confirm
+  // the parsed key so `abc-1234` cannot accidentally match `abc-12345`.
+  const legacy = await db.payment.findMany({
+    where: { checkId, clientOpId: null, note: { contains: `k=${normalized}` } },
     orderBy: { createdAt: "asc" },
   });
+  return legacy.find((row) => parseSettleNote(row.note).idempotencyKey === normalized) ?? null;
 }
 
 export async function lookupPaymentOp(db: Db, checkId: string, opId: string) {

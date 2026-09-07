@@ -33,7 +33,7 @@ function asSession(user: { id: string; email: string; name: string; role: string
   };
 }
 
-function client(label: string) {
+function client() {
   return new PrismaClient({ datasources: { db: { url: resolved.url! } }, log: ["error"] });
 }
 
@@ -52,7 +52,7 @@ async function openCheck(db: PrismaClient, waiterId: string, rate: number, folio
 }
 
 async function main() {
-  const setup = client("setup");
+  const setup = client();
   const [adminRow, salonRow, restaurant, station, category] = await Promise.all([
     setup.user.findFirst({ where: { role: "ADMIN" } }),
     setup.user.findFirst({ where: { role: "MESERO" } }),
@@ -110,8 +110,8 @@ async function main() {
 
   await setup.$disconnect();
 
-  const sessionA = client("session-a");
-  const sessionB = client("session-b");
+  const sessionA = client();
+  const sessionB = client();
   const [checkA, checkB] = await Promise.all([
     openCheck(sessionA, salon.id, rate, "P6P-RACE-A"),
     openCheck(sessionB, salon.id, rate, "P6P-RACE-B"),
@@ -139,7 +139,7 @@ async function main() {
   await sessionA.$disconnect();
   await sessionB.$disconnect();
 
-  const beforeReload = client("before-reload");
+  const beforeReload = client();
   await beforeReload.item.update({ where: { id: raceItem.id }, data: { stockQty: 2 } });
   const retryCheck = await openCheck(beforeReload, salon.id, rate, "P6P-RETRY");
   const retryOp = `p6p-retry-reload-${retryCheck.id}`;
@@ -152,7 +152,7 @@ async function main() {
   assert.equal(once.ok, true);
   await beforeReload.$disconnect();
 
-  const afterReload = client("after-reload");
+  const afterReload = client();
   const again = await addItemOp(afterReload, salon, {
     checkId: retryCheck.id,
     itemId: raceItem.id,

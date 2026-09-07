@@ -109,7 +109,7 @@ No hace falta Neon Marketplace.
 ### Después de pegar las URI
 
 1. **Redeploy** de producción (el build corre `prisma migrate deploy` y el seed idempotente).
-2. Si migrate falla, el build **no tumba** el login: verás el aviso y hay que corregir `DIRECT_URL` y volver a desplegar.
+2. Si `migrate deploy` falla, el despliegue se detiene para evitar publicar código contra un esquema incompleto. Corrige `DIRECT_URL` y vuelve a desplegar.
 3. Si `DATABASE_URL` aún no está, la home muestra un mensaje en español (no un crash opaco). El PIN no entra hasta que exista la URI.
 
 ### Local contra Supabase

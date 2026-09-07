@@ -5,6 +5,7 @@ import { DualMoney } from "@/components/pos/money-label";
 import { Badge } from "@/components/ui/badge";
 import { checkTotals } from "@/lib/money";
 import { checkPlaceLabel } from "@/lib/open-checks";
+import { confirmedPaymentUsd } from "@/lib/payment-status";
 
 type Row = {
   id: string;
@@ -15,7 +16,7 @@ type Row = {
   channel?: string;
   table: { number: string } | null;
   lines: { qty: number; priceUsd: number; modifiers: string; status: string; ivaRate?: number; discountUsd?: number; courtesy?: boolean }[];
-  payments: { amountUsd: number }[];
+  payments: { amountUsd: number; confirmed: boolean }[];
 };
 
 export function CashList({
@@ -45,7 +46,7 @@ export function CashList({
     <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-3">
       {checks.map((c) => {
         const t = checkTotals(c.lines, c.tipUsd, ivaRate);
-        const paid = c.payments.reduce((s, p) => s + p.amountUsd, 0);
+        const paid = confirmedPaymentUsd(c.payments);
         return (
           <Link
             key={c.id}

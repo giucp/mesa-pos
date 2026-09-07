@@ -27,6 +27,7 @@ export default async function CuentaOrderPage({
 
   return (
     <OrderEntry
+      key={`${check.id}:${check.updatedAt.toISOString()}`}
       placeLabel={checkPlaceLabel({
         channel: check.channel,
         table: check.table ? { number: check.table.number, zone: check.table.zone } : null,
