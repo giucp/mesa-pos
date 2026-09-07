@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createCategoryAction, createItemAction, updateItemAction } from "@/actions/menu";
 import { toast } from "sonner";
@@ -64,6 +64,7 @@ export function MenuCreateButtons({
         </Button>
       </div>
       <ItemFormDialog
+        key={`new:${categories.map((category) => category.id).join(",")}`}
         open={itemOpen}
         onOpenChange={setItemOpen}
         categories={categories}
@@ -90,41 +91,20 @@ export function ItemFormDialog({
   const router = useRouter();
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [price, setPrice] = useState("");
-  const [categoryId, setCategoryId] = useState(categories[0]?.id ?? "");
-  const [stationId, setStationId] = useState(stations[0]?.id ?? "");
-  const [taxCode, setTaxCode] = useState<(typeof TAX_CODES)[number]>("IVA16");
-  const [channels, setChannels] = useState<Channel[]>(["LOCAL", "BARRA", "TAKEAWAY"]);
-  const [available, setAvailable] = useState(true);
+  const [name, setName] = useState(item?.name ?? "");
+  const [description, setDescription] = useState(item?.description ?? "");
+  const [price, setPrice] = useState(item ? (item.priceUsd / 100).toFixed(2) : "");
+  const [categoryId, setCategoryId] = useState(item?.categoryId ?? categories[0]?.id ?? "");
+  const [stationId, setStationId] = useState(item?.stationId ?? stations[0]?.id ?? "");
+  const [taxCode, setTaxCode] = useState<(typeof TAX_CODES)[number]>(
+    item ? asTax(item.taxCode) : "IVA16",
+  );
+  const [channels, setChannels] = useState<Channel[]>(
+    item ? parseChannels(item.channels) : ["LOCAL", "BARRA", "TAKEAWAY"],
+  );
+  const [available, setAvailable] = useState(item?.available ?? true);
   const [reason, setReason] = useState("");
   const editing = Boolean(item);
-
-  useEffect(() => {
-    if (!open) return;
-    setError(null);
-    if (item) {
-      setName(item.name);
-      setDescription(item.description ?? "");
-      setPrice((item.priceUsd / 100).toFixed(2));
-      setCategoryId(item.categoryId);
-      setStationId(item.stationId);
-      setTaxCode(asTax(item.taxCode));
-      setChannels(parseChannels(item.channels));
-      setAvailable(item.available);
-      setReason("");
-      return;
-    }
-    setName("");
-    setDescription("");
-    setPrice("");
-    setCategoryId(categories[0]?.id ?? "");
-    setStationId(stations[0]?.id ?? "");
-    setTaxCode("IVA16");
-    setChannels(["LOCAL", "BARRA", "TAKEAWAY"]);
-    setAvailable(true);
-  }, [open, item, categories, stations]);
 
   function resetBlank() {
     setError(null);

@@ -3,7 +3,7 @@
  * Uses prisma/mesa-phase3.db only — does not touch mesa-demo.db or P2-* folios.
  */
 import assert from "node:assert/strict";
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { PrismaClient } from "@prisma/client";
@@ -46,7 +46,7 @@ if (fs.existsSync(demoDb)) {
 
 if (fs.existsSync(dbFile)) fs.unlinkSync(dbFile);
 if (fs.existsSync(localDb)) fs.copyFileSync(localDb, dbFile);
-execSync("npx prisma db push --schema prisma/schema.sqlite.prisma --accept-data-loss", {
+execFileSync(process.execPath, ["node_modules/prisma/build/index.js", "db", "push", "--schema", "prisma/schema.sqlite.prisma", "--accept-data-loss"], {
   stdio: "inherit",
   env: { ...process.env, DATABASE_URL: sqliteUrl },
 });
@@ -357,6 +357,13 @@ async function main() {
   assert.ok(confirmAudit);
   assert.match(confirmAudit.details, /PAGO_MOVIL|P3-REF|confirmed/);
   assert.equal(confirmAudit.userId, caja.id);
+  const confirmAgain = await confirmPaymentOp(prisma, caja, pending.id);
+  assert.equal(confirmAgain.ok, false);
+  assert.equal(
+    await prisma.auditLog.count({ where: { action: "PAYMENT_CONFIRM", checkId: payCheck.id } }),
+    1,
+    "reintentar una confirmación no duplica la bitácora",
+  );
 
   const paid = await openCheck("P3-REOPEN");
   await prisma.check.update({

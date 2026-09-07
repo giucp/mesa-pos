@@ -189,6 +189,9 @@ model Payment {
   igtfUsd     Int      @default(0)
   igtfVes     Int      @default(0)
   shiftId     String?
+  clientOpId  String?
+
+  @@unique([checkId, clientOpId])
 }
 
 model FiscalDraft {

@@ -30,6 +30,7 @@ export default async function TablePage({
 
   return (
     <OrderEntry
+      key={`${check.id}:${check.updatedAt.toISOString()}`}
       placeLabel={`Mesa ${table.number}`}
       role={user.role}
       ivaRate={restaurant.ivaRate}

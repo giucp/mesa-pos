@@ -1,4 +1,5 @@
 import { fiscalTotals } from "@/lib/fiscal";
+import { confirmedPaymentUsd } from "@/lib/payment-status";
 
 export const OPEN_CHECK_STATUSES = ["OPEN", "SENT", "PARTIAL"] as const;
 export type OpenCheckStatus = (typeof OPEN_CHECK_STATUSES)[number];
@@ -134,12 +135,12 @@ export function remainingUsdOf(
       discountUsd?: number | null;
       courtesy?: boolean | null;
     }[];
-    payments: { amountUsd: number }[];
+    payments: { amountUsd: number; confirmed: boolean }[];
   },
   ivaRate: number,
 ) {
   const totals = fiscalTotals(check.lines, check.tipUsd, ivaRate);
-  const paid = check.payments.reduce((s, p) => s + p.amountUsd, 0);
+  const paid = confirmedPaymentUsd(check.payments);
   return Math.max(0, totals.totalUsd - paid);
 }
 
@@ -158,7 +159,7 @@ export function isOpenCheck(
       discountUsd?: number | null;
       courtesy?: boolean | null;
     }[];
-    payments: { amountUsd: number }[];
+    payments: { amountUsd: number; confirmed: boolean }[];
   },
   ivaRate: number,
 ) {
@@ -207,7 +208,7 @@ type OpenCheckSource = {
     discountUsd?: number | null;
     courtesy?: boolean | null;
   }[];
-  payments: { amountUsd: number; createdAt?: Date | string | null }[];
+  payments: { amountUsd: number; confirmed: boolean; createdAt?: Date | string | null }[];
 };
 
 export function toOpenCheck(check: OpenCheckSource, ivaRate: number): OpenCheck | null {

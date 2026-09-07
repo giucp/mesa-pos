@@ -129,11 +129,6 @@ export function OrderEntry({
   }
 
   useEffect(() => {
-    setKnownLineIds(check.lines.map((l) => l.id));
-    setBaseUpdatedAt(check.updatedAt);
-  }, [check.id, check.updatedAt, check.lines]);
-
-  useEffect(() => {
     const load = async () => {
       const jobs = await listJobs();
       setQueuedLines(jobs.filter((j) => j.action === "addItem" && j.payload.checkId === check.id));

@@ -6,10 +6,10 @@ import { can, type Action, type Role, type SessionUser } from "@/lib/roles";
 import { authorize } from "@/lib/permissions";
 import { safeNextPath } from "@/lib/safe-next";
 
-async function liveUser(session: SessionUser | null): Promise<SessionUser | null> {
+export async function liveUser(session: SessionUser | null): Promise<SessionUser | null> {
   if (!session) return null;
   const dbUser = await prisma.user.findFirst({
-    where: { OR: [{ id: session.id }, { email: session.email }], active: true },
+    where: { id: session.id, active: true },
   });
   if (!dbUser) return null;
   return {

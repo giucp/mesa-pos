@@ -52,6 +52,7 @@ export default async function FloorPage() {
             })),
             payments: c.payments.map((p) => ({
               amountUsd: p.amountUsd,
+              confirmed: p.confirmed,
               createdAt: p.createdAt.toISOString(),
             })),
           })),

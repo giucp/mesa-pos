@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   addPaymentAction,
@@ -56,6 +56,7 @@ import { sourceLabel } from "@/lib/bcv-label";
 import { PrintStub } from "@/components/pos/print-stub";
 import { DIGITAL_TENDERS, PENDING_PAY_INTEGRATIONS } from "@/lib/pagos";
 import { describePaymentSettle, parseSettleNote } from "@/lib/caja";
+import { confirmedPaymentUsd } from "@/lib/payment-status";
 import { ISOLATED_DEMO } from "@/lib/isolated-demo";
 
 type Method = {
@@ -66,6 +67,12 @@ type Method = {
   hint: string | null;
   igtfProfile: string;
 };
+
+function newPaymentOpId() {
+  return typeof crypto !== "undefined" && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `pay-${Date.now()}`;
+}
 
 type Line = {
   id: string;
@@ -176,9 +183,7 @@ export function CheckoutDesk({
   const [rateReason, setRateReason] = useState("");
   const [reopenReason, setReopenReason] = useState("");
   const paying = useRef(false);
-  const payKey = useRef(
-    typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `pay-${Date.now()}`,
-  );
+  const payKey = useRef<string | null>(null);
 
   const frozen = check.bcvRateUsed || rate;
   const totals = fiscalTotals(
@@ -188,8 +193,8 @@ export function CheckoutDesk({
     frozen,
     restaurant.tipInTaxableBase,
   );
-  const paidUsd = check.payments.reduce((s, p) => s + p.amountUsd, 0);
-  const receivedUsd = check.payments.reduce((s, p) => s + (p.confirmed ? p.amountUsd : 0), 0);
+  const paidUsd = confirmedPaymentUsd(check.payments);
+  const receivedUsd = paidUsd;
   const igtfPaid = check.payments.reduce((s, p) => s + (p.confirmed ? p.igtfUsd : 0), 0);
   const remainingUsd = Math.max(0, totals.totalUsd - paidUsd);
   const method = methods.find((m) => m.key === methodKey);
@@ -213,7 +218,7 @@ export function CheckoutDesk({
   });
   const nextIgtfUsd = igtfOn(remainingUsd, nextIgtf);
   const collectUsd = remainingUsd + nextIgtfUsd;
-  const ivaLines = useMemo(() => {
+  const ivaLines = (() => {
     if (!check.fiscal?.ivaBreakdown) return totals.breakdown;
     try {
       const parsed = JSON.parse(check.fiscal.ivaBreakdown) as {
@@ -226,16 +231,16 @@ export function CheckoutDesk({
     } catch {
       return totals.breakdown;
     }
-  }, [check.fiscal?.ivaBreakdown, totals.breakdown]);
+  })();
 
-  const vuelto = useMemo(() => {
+  const vuelto = (() => {
     const cents = parseAmountToCents(amount);
     if (!cents || !method) return null;
     const asUsd = currency === "VES" ? Math.round((cents / 100 / frozen) * 100) : cents;
     const extra = asUsd - remainingUsd;
     if (extra <= 0) return null;
     return { usd: extra, ves: usdToVesCents(extra, frozen) };
-  }, [amount, currency, method, frozen, remainingUsd]);
+  })();
 
   function fillRemaining() {
     if (currency === "VES") setAmount((usdToVesCents(remainingUsd, frozen) / 100).toFixed(2));
@@ -785,6 +790,8 @@ export function CheckoutDesk({
                 paying.current = true;
                 start(async () => {
                   setError(null);
+                  const operationId = payKey.current ?? newPaymentOpId();
+                  payKey.current = operationId;
                   const payload = {
                     checkId: check.id,
                     methodKey: method.key,
@@ -797,15 +804,15 @@ export function CheckoutDesk({
                     payerProfile: profile,
                     igtfCustomRate: Number.parseFloat(customIgtf) || 0,
                     verified,
-                    idempotencyKey: payKey.current,
+                    idempotencyKey: operationId,
                   };
                   const res = await runOrQueue(
-                    { id: payKey.current, kind: "cobro", action: "addPayment", payload },
+                    { id: operationId, kind: "cobro", action: "addPayment", payload },
                     () => addPaymentAction(payload),
                   );
                   paying.current = false;
                   if (res.unknown) {
-                    const verify = await verifyPaymentStatusAction(check.id, payKey.current);
+                    const verify = await verifyPaymentStatusAction(check.id, operationId);
                     if (verify.status === "unknown") {
                       setResult(
                         "Por verificar — no está cobrado ni fallido. Se consulta el servidor antes de reenviar el mismo identificador.",
@@ -836,10 +843,7 @@ export function CheckoutDesk({
                   }
                   if (res.error) setError(res.error);
                   else {
-                    payKey.current =
-                      typeof crypto !== "undefined" && crypto.randomUUID
-                        ? crypto.randomUUID()
-                        : `pay-${Date.now()}`;
+                    payKey.current = null;
                     setAmount("");
                     setReference("");
                     const change =

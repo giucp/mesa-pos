@@ -1,3 +1,5 @@
+import { demoAccessEnabled } from "@/lib/demo-auth";
+import { liveUser } from "@/lib/auth-guard";
 import { LoginForm } from "@/components/pos/login-form";
 import { OfflineSync } from "@/components/pos/offline-sync";
 import { StatusChip } from "@/components/pos/status-chip";
@@ -20,7 +22,7 @@ export default async function LoginPage({
 }) {
   const query = await searchParams;
   const next = safeNextPath(query.next);
-  const session = await getSession();
+  const session = await liveUser(await getSession());
   if (session) redirect(next ?? homePath(session.role));
   const dbReady = isDatabaseConfigured();
 
@@ -56,7 +58,7 @@ export default async function LoginPage({
             <p className="text-sm text-muted-foreground">
               {ISOLATED_DEMO
                 ? "Entorno aislado Fase 2 — no es Café Ávila producción"
-                : "Café Ávila · demo lista para usar"}
+                : "Café Ávila"}
             </p>
           </div>
           {ISOLATED_DEMO ? (
@@ -87,7 +89,7 @@ export default async function LoginPage({
               <AlertDescription>{MISSING_DB_MESSAGE}</AlertDescription>
             </Alert>
           )}
-          <LoginForm next={next} />
+          <LoginForm next={next} demoEnabled={demoAccessEnabled()} />
         </div>
       </div>
     </div>

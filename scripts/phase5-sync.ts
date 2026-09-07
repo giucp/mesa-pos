@@ -3,7 +3,7 @@
  * Does not touch production or isolated demo sales.
  */
 import assert from "node:assert/strict";
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { PrismaClient } from "@prisma/client";
@@ -36,7 +36,7 @@ if (fs.existsSync(demoDb)) {
 }
 
 if (fs.existsSync(dbFile)) fs.unlinkSync(dbFile);
-execSync("npx prisma db push --schema prisma/schema.sqlite.prisma --accept-data-loss", {
+execFileSync(process.execPath, ["node_modules/prisma/build/index.js", "db", "push", "--schema", "prisma/schema.sqlite.prisma", "--accept-data-loss"], {
   stdio: "inherit",
   env: { ...process.env, DATABASE_URL: sqliteUrl },
 });
@@ -237,6 +237,7 @@ async function main() {
       amountVes: settle.appliedVes,
       confirmed: paymentIsConfirmed({ methodKey: "CASH_USD", verified: true }),
       shiftId: shift.id,
+      clientOpId: opId,
       note: settleNote({
         tenderedCents: settle.tenderedCents,
         changeCents: settle.changeCents,

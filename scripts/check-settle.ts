@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { usdToVesCents } from "../src/lib/money";
 import { settleTender, paymentIsConfirmed, summarizePayments, parseSettleNote, settleNote } from "../src/lib/caja";
+import { confirmedPaymentUsd, normalizePaymentOpId } from "../src/lib/payment-status";
 
 const rate = 148.52;
 
@@ -50,6 +51,17 @@ assert.equal(paymentIsConfirmed({ methodKey: "PAGO_MOVIL", verified: false }), f
 assert.equal(paymentIsConfirmed({ methodKey: "PAGO_MOVIL", verified: true }), true);
 assert.equal(paymentIsConfirmed({ methodKey: "CASH_USD", verified: undefined }), true);
 assert.equal(paymentIsConfirmed({ methodKey: "CASH_USD", verified: false }), false);
+assert.equal(
+  confirmedPaymentUsd([
+    { amountUsd: 754, confirmed: true },
+    { amountUsd: 67, confirmed: false },
+  ]),
+  754,
+  "un pago pendiente no reduce el saldo confirmado",
+);
+assert.equal(normalizePaymentOpId("pay-12345"), "pay-12345");
+assert.equal(normalizePaymentOpId("short"), null);
+assert.equal(normalizePaymentOpId("pay id invalid"), null);
 
 const note = settleNote({ tenderedCents: 2000, changeCents: 1246, idempotencyKey: "abc-1", extra: "Vuelto" });
 const parsed = parseSettleNote(note);

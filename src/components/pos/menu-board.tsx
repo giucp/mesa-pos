@@ -237,6 +237,7 @@ export function MenuBoard({
       )}
 
       <ItemFormDialog
+        key={editing?.id ?? "closed"}
         open={Boolean(editing)}
         onOpenChange={(next) => {
           if (!next) setEditing(null);
