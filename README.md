@@ -11,6 +11,7 @@ Producto: **Mesa**. Copia en español (Venezuela). Un local. IA bloqueada de Sis
 
 ```bash
 cp .env.example .env
+# Completa SESSION_SECRET con una clave aleatoria de al menos 32 caracteres.
 npm install
 npm run db:push
 npm run db:seed
@@ -31,7 +32,26 @@ PIN 1111. Folios `P2-A-USD`, `P2-B-VES`, `P2-C-MIX`. Comprobante interno.
 
 Si `prisma/mesa.db` ya existe y `.env` tiene `DATABASE_URL="file:./mesa.db"`, basta `npm install && npm run dev`.
 
-## Usuarios demo
+## Acceso y seguridad
+
+En despliegues normales se entra con correo y contraseña. Los botones demo y los PIN
+compartidos solo funcionan con `MESA_ISOLATED_DEMO=1`, reservado al entorno aislado.
+No actives ese flag para recuperar acceso en producción: también habilita datos demo.
+
+`SESSION_SECRET` es obligatorio: al menos 32 caracteres aleatorios. Genera uno con
+`node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`.
+No se acepta la clave de ejemplo ni la antigua firma pública de desarrollo.
+Rotar la clave invalida las sesiones existentes.
+
+Antes de desplegar esta corrección en olive: configura la clave y establece una
+contraseña privada para el administrador mediante el procedimiento de administración
+de la base de datos. Las contraseñas compartidas del seed son públicas y deben cambiarse;
+esta corrección no modifica usuarios ni contraseñas de producción.
+
+`npm run test:auth` (Node 22.3+ con module mocks) verifica las acciones de login,
+usuarios inactivos, identidad estable, aislamiento demo y validación de sesiones.
+
+## Usuarios demo (solo entorno aislado)
 
 Clave de todos: `mesa123`. PIN de 4 dígitos en el login.
 
@@ -44,7 +64,7 @@ Clave de todos: `mesa123`. PIN de 4 dígitos en el login.
 
 ## Origin (código)
 
-El remoto de esta sesión es el codebase de Cursor. GitHub `giucp/mesa-pos` puede no existir todavía.
+Repositorio: [giucp/mesa-pos](https://github.com/giucp/mesa-pos).
 
 ## Persistencia en Vercel: Supabase Postgres
 
@@ -79,7 +99,7 @@ Proyecto: `mesa-pos` (`prj_1EfEQgIlnxe7haVme6Jjz1zUP3Ck`).
 | --- | --- | --- |
 | `DATABASE_URL` | Sí, producción | URI **pooler** Supabase, puerto **6543**, `pgbouncer=true` |
 | `DIRECT_URL` | Sí, para `prisma migrate deploy` | URI **directa** Supabase, puerto **5432** |
-| `SESSION_SECRET` | Recomendado | String largo aleatorio |
+| `SESSION_SECRET` | Sí | Al menos 32 caracteres aleatorios |
 | `BCV_RATE_URL` | No | JSON de tasa BCV |
 
 Alias aceptados (por si pegas nombres viejos de Vercel Postgres): `POSTGRES_PRISMA_URL` / `POSTGRES_URL` como pooler; `DATABASE_URL_UNPOOLED` / `POSTGRES_URL_NON_POOLING` como directa. El código **prefiere** `DATABASE_URL` + `DIRECT_URL`.

@@ -19,7 +19,8 @@
     "test:phase4": "tsx scripts/phase4-shift.ts",
     "test:phase5": "tsx scripts/phase5-sync.ts",
     "test:phase6": "tsx scripts/phase6-stock.ts",
-    "test:phase6:persist": "tsx scripts/phase6-persistent.ts"
+    "test:phase6:persist": "tsx scripts/phase6-persistent.ts",
+    "test:auth": "node --experimental-test-module-mocks --import tsx scripts/auth-security.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

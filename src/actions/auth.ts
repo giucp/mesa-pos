@@ -1,5 +1,6 @@
 "use server";
 
+import { demoEmailForPin, allowedDemoEmail } from "@/lib/demo-auth";
 import { redirect } from "next/navigation";
 import { MISSING_DB_MESSAGE, asPublicDbError, isDatabaseConfigured, prisma } from "@/lib/db";
 import { verifyPassword } from "@/lib/password";
@@ -45,13 +46,13 @@ export async function logoutAction() {
 
 export async function pinLoginAction(pin: string, next?: string | null) {
   if (!isDatabaseConfigured()) return { error: MISSING_DB_MESSAGE };
-  const { DEMO_PINS } = await import("@/lib/paths");
-  const email = DEMO_PINS[pin.trim()];
+  const email = demoEmailForPin(pin);
   if (!email) return { error: "PIN incorrecto." };
   return demoLoginAction(email, next);
 }
 
 export async function demoLoginAction(email: string, next?: string | null) {
+  if (!allowedDemoEmail(email)) return { error: "Acceso demo no disponible. Usa correo y clave." };
   if (!isDatabaseConfigured()) return { error: MISSING_DB_MESSAGE };
   let user;
   try {
@@ -59,7 +60,7 @@ export async function demoLoginAction(email: string, next?: string | null) {
   } catch (error) {
     return { error: asPublicDbError(error) ?? "No se pudo leer usuarios." };
   }
-  if (!user) return { error: "Usuario demo no encontrado. Ejecuta npm run db:seed" };
+  if (!user || !user.active) return { error: "Acceso demo no disponible." };
   await setSession({
     id: user.id,
     email: user.email,

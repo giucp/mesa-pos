@@ -16,7 +16,7 @@ const DEMOS: { email: string; role: Role; name: string; pin: string }[] = [
   { email: "cocina@mesa.ve", role: "COCINA", name: "José Altuve", pin: "4444" },
 ];
 
-export function LoginForm({ next: returnTo }: { next?: string | null }) {
+export function LoginForm({ next: returnTo, demoEnabled = false }: { next?: string | null; demoEnabled?: boolean }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const [pin, setPin] = useState("");
@@ -40,8 +40,8 @@ export function LoginForm({ next: returnTo }: { next?: string | null }) {
 
   return (
     <div className="space-y-6">
-      <div>
-        <Label>PIN de turno</Label>
+      {demoEnabled ? <div>
+        <Label>PIN de demostración</Label>
         <div className="mt-2 flex justify-center gap-2">
           {[0, 1, 2, 3].map((i) => (
             <div
@@ -80,7 +80,7 @@ export function LoginForm({ next: returnTo }: { next?: string | null }) {
             ),
           )}
         </div>
-      </div>
+      </div> : null}
 
       <form
         className="space-y-4"
@@ -135,7 +135,7 @@ export function LoginForm({ next: returnTo }: { next?: string | null }) {
         </Button>
       </form>
 
-      <div>
+      {demoEnabled ? <div>
         <p className="mb-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
           Acceso demo — un toque
         </p>
@@ -164,7 +164,7 @@ export function LoginForm({ next: returnTo }: { next?: string | null }) {
         <p className="mt-3 text-center text-xs text-muted-foreground">
           Clave de todos: <span className="font-mono text-foreground">mesa123</span>
         </p>
-      </div>
+      </div> : null}
     </div>
   );
 }
