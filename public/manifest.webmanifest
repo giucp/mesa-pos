@@ -1,0 +1,18 @@
+{
+  "name": "Mesa POS VE",
+  "short_name": "Mesa",
+  "description": "POS para restaurantes en Venezuela",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1c1916",
+  "theme_color": "#1c1916",
+  "lang": "es-VE",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

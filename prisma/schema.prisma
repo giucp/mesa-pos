@@ -1,0 +1,328 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  role         String
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  checks       Check[]  @relation("WaiterChecks")
+  voids        VoidLog[]
+}
+
+model Restaurant {
+  id                   String   @id @default(cuid())
+  name                 String
+  rif                  String
+  address              String?
+  phone                String?
+  ivaRate              Float    @default(16)
+  igtfBancarizadoRate  Float    @default(0)
+  igtfForexRate        Float    @default(3)
+  tipInTaxableBase     Boolean  @default(false)
+  bcvRate              Float
+  bcvUpdatedAt         DateTime
+  bcvSource            String   @default("seed")
+  folioSeq             Int      @default(1)
+  controlSeq           Int      @default(1)
+  invoiceSeq           Int      @default(1)
+  fiscalAdapterMf      String   @default("DESCONECTADO")
+  fiscalAdapterDigital String   @default("DESCONECTADO")
+}
+
+model PaymentMethod {
+  id          String  @id @default(cuid())
+  key         String  @unique
+  label       String
+  enabled     Boolean @default(true)
+  currency    String
+  sortOrder   Int     @default(0)
+  hint        String?
+  igtfProfile String  @default("BANCARIZADO")
+}
+
+model Station {
+  id        String     @id @default(cuid())
+  name      String
+  slug      String     @unique
+  sortOrder Int        @default(0)
+  items     Item[]
+  tickets   OrderLine[]
+}
+
+model Category {
+  id        String @id @default(cuid())
+  name      String
+  sortOrder Int    @default(0)
+  items     Item[]
+}
+
+model Item {
+  id          String     @id @default(cuid())
+  name        String
+  description String?
+  priceUsd    Int
+  categoryId  String
+  category    Category   @relation(fields: [categoryId], references: [id])
+  stationId   String
+  station     Station    @relation(fields: [stationId], references: [id])
+  available   Boolean    @default(true)
+  channels    String     @default("LOCAL,DELIVERY")
+  sortOrder   Int        @default(0)
+  taxCode         String     @default("IVA16")
+  ivaRate         Float      @default(16)
+  stockControlled Boolean    @default(false)
+  stockQty        Int        @default(0)
+  stockUnit       String     @default("un")
+  stockMinAlert   Int        @default(0)
+  modifiers       Modifier[]
+  lines           OrderLine[]
+  stockMoves      StockMovement[]
+}
+
+model Modifier {
+  id       String @id @default(cuid())
+  name     String
+  priceUsd Int    @default(0)
+  itemId   String
+  item     Item   @relation(fields: [itemId], references: [id], onDelete: Cascade)
+}
+
+model DiningTable {
+  id     String  @id @default(cuid())
+  number String
+  seats  Int
+  zone   String
+  posX   Float   @default(0)
+  posY   Float   @default(0)
+  status String  @default("FREE")
+  checks Check[]
+}
+
+model Check {
+  id             String       @id @default(cuid())
+  folio          String       @unique
+  tableId        String?
+  table          DiningTable? @relation(fields: [tableId], references: [id])
+  status         String       @default("OPEN")
+  channel        String       @default("LOCAL")
+  guestCount     Int          @default(1)
+  waiterId       String?
+  waiter         User?        @relation("WaiterChecks", fields: [waiterId], references: [id])
+  notes          String?
+  tipUsd         Int          @default(0)
+  payerProfile   String       @default("AUTO")
+  igtfCustomRate Float        @default(0)
+  bcvRateUsed    Float?
+  bcvSource      String?
+  bcvFetchedAt   DateTime?
+  buyerName      String?
+  buyerRif       String?
+  buyerCi        String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  sentAt         DateTime?
+  closedAt       DateTime?
+  voidedAt       DateTime?
+  voidReason     String?
+  lines          OrderLine[]
+  payments       Payment[]
+  fiscal         FiscalDraft?
+  voids          VoidLog[]
+}
+
+model OrderLine {
+  id          String    @id @default(cuid())
+  checkId     String
+  check       Check     @relation(fields: [checkId], references: [id], onDelete: Cascade)
+  itemId      String?
+  item        Item?     @relation(fields: [itemId], references: [id])
+  name        String
+  qty         Int
+  priceUsd    Int
+  notes       String?
+  modifiers   String    @default("[]")
+  status      String    @default("HELD")
+  stationId   String
+  station     Station   @relation(fields: [stationId], references: [id])
+  course      Int       @default(1)
+  sentAt          DateTime?
+  bumpedAt        DateTime?
+  createdAt       DateTime  @default(now())
+  taxCode         String    @default("IVA16")
+  ivaRate         Float     @default(16)
+  discountUsd     Int       @default(0)
+  courtesy        Boolean   @default(false)
+  courtesyReason  String?
+  clientOpId      String?   @unique
+  stockReserved   Int       @default(0)
+  stockCommitted  Boolean   @default(false)
+}
+
+model Payment {
+  id          String   @id @default(cuid())
+  checkId     String
+  check       Check    @relation(fields: [checkId], references: [id], onDelete: Cascade)
+  methodKey   String
+  methodLabel String
+  currency    String
+  amountCents Int
+  amountUsd   Int
+  reference   String?
+  confirmed   Boolean  @default(false)
+  note        String?
+  createdAt   DateTime @default(now())
+  bcvRate     Float    @default(0)
+  bcvSource   String   @default("other")
+  bcvFetchedAt DateTime?
+  amountVes   Int      @default(0)
+  igtfRate    Float    @default(0)
+  igtfUsd     Int      @default(0)
+  igtfVes     Int      @default(0)
+  shiftId     String?
+}
+
+model FiscalDraft {
+  id              String   @id @default(cuid())
+  checkId         String   @unique
+  check           Check    @relation(fields: [checkId], references: [id], onDelete: Cascade)
+  documentType    String   @default("BORRADOR_FISCAL")
+  ticketType      String   @default("TICKET_INTERNO")
+  emitterRif      String   @default("")
+  controlNumber   String   @default("")
+  invoiceNumber   String   @default("")
+  customerName    String?
+  customerRif     String?
+  customerCi      String?
+  channel         String   @default("LOCAL")
+  ivaRate         Float
+  ivaBreakdown    String   @default("[]")
+  subtotalUsd     Int
+  ivaUsd          Int
+  tipUsd          Int
+  igtfUsd         Int      @default(0)
+  igtfRate        Float    @default(0)
+  totalUsd        Int
+  subtotalVes     Int      @default(0)
+  ivaVes          Int      @default(0)
+  tipVes          Int      @default(0)
+  igtfVes         Int      @default(0)
+  totalVes        Int      @default(0)
+  usdRef          String?
+  bcvRate         Float
+  bcvSource       String   @default("seed")
+  createdAt       DateTime @default(now())
+  homologation    String   @default("EMITIDO")
+  adapterMf       String   @default("DESCONECTADO")
+  adapterDigital  String   @default("DESCONECTADO")
+  withholdingNote String   @default("RETENCION_IVA_STUB")
+}
+
+model VoidLog {
+  id        String   @id @default(cuid())
+  checkId   String?
+  check     Check?   @relation(fields: [checkId], references: [id])
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  reason    String
+  details   String?
+  createdAt DateTime @default(now())
+}
+
+model RateLog {
+  id        String   @id @default(cuid())
+  rate      Float
+  source    String
+  fetchedAt DateTime @default(now())
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  action    String
+  reason    String
+  userId    String?
+  checkId   String?
+  details   String
+  createdAt DateTime @default(now())
+}
+
+model PurchaseStub {
+  id           String   @id @default(cuid())
+  date         DateTime @default(now())
+  supplierName String
+  supplierRif  String
+  description  String
+  baseVes      Int
+  ivaVes       Int
+  totalVes     Int
+  ivaRate      Float    @default(16)
+}
+
+model CashShift {
+  id              String         @id @default(cuid())
+  drawerKey       String         @default("CAJA-1")
+  status          String         @default("OPEN")
+  openedAt        DateTime       @default(now())
+  openedById      String
+  openedByName    String
+  openingUsd      Int
+  openingVes      Int
+  closedAt        DateTime?
+  closedById      String?
+  closedByName    String?
+  countedUsd      Int?
+  countedVes      Int?
+  expectedUsd     Int?
+  expectedVes     Int?
+  differenceUsd   Int?
+  differenceVes   Int?
+  closeReason     String?
+  summaryJson     String?
+  transferredJson String?
+  kind            String         @default("MESA_INTERNO")
+  notes           String?
+  openLock        String?        @unique
+  movements       CashMovement[]
+}
+
+model StockMovement {
+  id         String   @id @default(cuid())
+  itemId     String
+  item       Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  type       String
+  qty        Int
+  unit       String   @default("un")
+  motivo     String
+  userId     String?
+  userName   String?
+  checkId    String?
+  lineId     String?
+  clientOpId String?  @unique
+  createdAt  DateTime @default(now())
+
+  @@index([itemId, createdAt])
+}
+
+model CashMovement {
+  id          String    @id @default(cuid())
+  shiftId     String
+  shift       CashShift @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  type        String
+  currency    String
+  amountCents Int
+  concept     String
+  reason      String
+  userId      String?
+  userName    String?
+  createdAt   DateTime  @default(now())
+}
